@@ -54,5 +54,6 @@
     "bluebird": "^3.4.7",
     "generic-promise-pool": "^1.2.2",
     "redis": "^2.6.5"
-  }
+  },
+  "registry": "https://registry.npmjs.org/"
 }
