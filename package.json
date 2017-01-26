@@ -1,6 +1,6 @@
 {
   "name": "redis-resource-wait-list",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Manage limited atomic resource using redis, with wait / queue feature.",
   "main": "src/index.js",
   "files": [
@@ -52,6 +52,7 @@
   },
   "dependencies": {
     "bluebird": "^3.4.7",
+    "generic-promise-pool": "^1.2.2",
     "redis": "^2.6.5"
   }
 }
