@@ -1,0 +1,18 @@
+{
+  "extends": "raabbajam",
+  "env":
+  {
+    "node": true,
+    "es6": true
+  },
+  "rules":
+  {
+    "strict": 0,
+    "no-magic-numbers": [2,
+    {
+      "ignoreArrayIndexes": true,
+      "ignore": [-3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    }]
+
+  }
+}
