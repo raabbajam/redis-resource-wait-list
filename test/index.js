@@ -170,3 +170,39 @@ test('List -- maxTimeoutToRelease', (assert) => {
         .then(() => assert.end(error));
     });
 });
+test('List -- removed when busy', (assert) => {
+  const list = List({
+    name: 'resource-x',
+    resources: ['x1'],
+  });
+  return list.start()
+    .then(() => list.acquire())
+    .then((x1) => list.remove(x1).then(() => list.release(x1)))
+    .then(() => list.getInfo())
+    .then((info) => {
+      assert.ok(info.available.length === 0, 'should not released back to available due to removed');
+      return list.stop().then(() => assert.end());
+    })
+    .catch((error) => {
+      list.stop()
+        .then(() => assert.end(error));
+    });
+});
+test('List -- released twice', (assert) => {
+  const list = List({
+    name: 'resource-x',
+    resources: ['x1'],
+  });
+  return list.start()
+    .then(() => list.acquire())
+    .then((x1) => list.release(x1).then(() => list.release(x1)))
+    .then(() => list.getInfo())
+    .then((info) => {
+      assert.ok(info.available.length === 1, 'should not duplicate on available');
+      return list.stop().then(() => assert.end());
+    })
+    .catch((error) => {
+      list.stop()
+        .then(() => assert.end(error));
+    });
+});
