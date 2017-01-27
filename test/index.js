@@ -12,11 +12,11 @@ test('List -- start', (assert) => {
       .then((info) => {
         assert.ok(info.available.length === 1, 'should make available 1');
         assert.ok(info.busy.length === 0, 'should make busy length 0');
-        return list.stop().then(() => assert.end());
+        return list.destroy().then(() => list.stop()).then(() => assert.end());
       })
     )
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -34,11 +34,11 @@ test('List -- acquire', (assert) => {
           assert.ok(info.available.length === 0, 'should make none available');
           assert.ok(info.busy[0] === 'x1', 'should register resource as busy');
           assert.ok(info.busy.length === 1, 'should make busy length 1');
-          return list.stop().then(() => assert.end());
+          return list.destroy().then(() => list.stop()).then(() => assert.end());
         });
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -54,10 +54,10 @@ test('List -- release', (assert) => {
     .then((info) => {
       assert.ok(info.available.length === 1, 'should make resource available');
       assert.ok(info.busy.length === 0, 'should release busy resource');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -71,10 +71,27 @@ test('List -- add', (assert) => {
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 2, 'should make available 2');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
+        .then(() => assert.end(error));
+    });
+});
+test('List -- add multiple', (assert) => {
+  const list = List({
+    name: 'resource-x',
+    resources: ['x1'],
+  });
+  return list.start()
+    .then(() => list.add('x2', 'x3'))
+    .then(() => list.getInfo())
+    .then((info) => {
+      assert.ok(info.available.length === 3, 'should make available 3');
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
+    })
+    .catch((error) => {
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -88,10 +105,27 @@ test('List -- remove', (assert) => {
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 0, 'should make available 0');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
+        .then(() => assert.end(error));
+    });
+});
+test('List -- remove multiple', (assert) => {
+  const list = List({
+    name: 'resource-x',
+    resources: ['x1', 'x2'],
+  });
+  return list.start()
+    .then(() => list.remove('x1', 'x2'))
+    .then(() => list.getInfo())
+    .then((info) => {
+      assert.ok(info.available.length === 0, 'should make available 0');
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
+    })
+    .catch((error) => {
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -101,7 +135,7 @@ test('List -- stop', (assert) => {
     resources: ['x1'],
   });
   return list.start()
-    .then(() => list.stop())
+    .then(() => list.destroy().then(() => list.stop()))
     .then(() => list.getInfo())
     .catch((error) => {
       assert.ok(Boolean(error), 'should error connection closed');
@@ -119,10 +153,10 @@ test('List -- started in 2 places', (assert) => {
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 0, 'should not re init');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -140,10 +174,10 @@ test('List -- acquire more than available', (assert) => {
     })
     .then((x1) => {
       assert.ok(x1 === 'x1', 'should wait until available');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -163,10 +197,10 @@ test('List -- maxTimeoutToRelease', (assert) => {
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 1, 'should released due to timeout');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
@@ -181,14 +215,14 @@ test('List -- removed when busy', (assert) => {
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 0, 'should not released back to available due to removed');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });
-test.only('List -- released multiple times', (assert) => {
+test('List -- released multiple times', (assert) => {
   const list = List({
     name: 'resource-x',
     resources: ['x1'],
@@ -199,10 +233,27 @@ test.only('List -- released multiple times', (assert) => {
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 1, 'should not duplicate on available');
-      return list.stop().then(() => assert.end());
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
     })
     .catch((error) => {
-      list.stop()
+      list.destroy().then(() => list.stop())
+        .then(() => assert.end(error));
+    });
+});
+test('List -- sync', (assert) => {
+  const list = List({
+    name: 'resource-x',
+    resources: ['x1', 'x2'],
+  });
+  return list.start()
+    .then(() => list.sync(['x1', 'x3']))
+    .then(() => list.getInfo())
+    .then((info) => {
+      assert.ok(info.available.length === 2, 'should sync');
+      return list.destroy().then(() => list.stop()).then(() => assert.end());
+    })
+    .catch((error) => {
+      list.destroy().then(() => list.stop())
         .then(() => assert.end(error));
     });
 });

@@ -1,8 +1,9 @@
-const Promise = require('bluebird');
 const debug = require('debug')('redis-resource-wait-list:main');
+const Promise = require('bluebird');
 const moment = require('moment');
 const pool = require('generic-promise-pool');
 const redis = require('redis');
+const _ = require('lodash');
 const bigNumber = 9999;
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
@@ -56,8 +57,10 @@ function List(data = {}) {
     add,
     remove,
     getInfo,
-    stop,
     releaseAllExpired,
+    stop,
+    destroy,
+    sync,
   };
   const list = Object.assign(Object.create(prototypes), properties);
   return list;
@@ -121,24 +124,32 @@ function release(resource) {
       }));
 }
 
-function add(resource) {
+function add(...resources) {
   const {keys} = this;
-  return this.getRedisClient((redisClient) =>
-    redisClient.multi()
-      .sadd(keys.resourcesListKey, resource)
-      .lrem(keys.availableListKey, bigNumber, resource)
-      .rpush(keys.availableListKey, resource)
-      .execAsync());
+  return this.getRedisClient((redisClient) => {
+    const multi = redisClient.multi();
+    resources.forEach((resource) => {
+      multi
+        .sadd(keys.resourcesListKey, resource)
+        .lrem(keys.availableListKey, bigNumber, resource)
+        .rpush(keys.availableListKey, resource);
+    });
+    return multi.execAsync();
+  });
 }
 
-function remove(resource) {
+function remove(...resources) {
   const {keys} = this;
-  return this.getRedisClient((redisClient) =>
-    redisClient.multi()
-      .lrem(keys.busyListKey, bigNumber, resource)
-      .lrem(keys.availableListKey, bigNumber, resource)
-      .srem(keys.resourcesListKey, resource)
-      .execAsync());
+  return this.getRedisClient((redisClient) => {
+    const multi = redisClient.multi();
+    resources.forEach((resource) => {
+      multi
+        .lrem(keys.busyListKey, bigNumber, resource)
+        .lrem(keys.availableListKey, bigNumber, resource)
+        .srem(keys.resourcesListKey, resource);
+    });
+    return multi.execAsync();
+  });
 }
 
 function getInfo() {
@@ -154,24 +165,26 @@ function getInfo() {
 
 function stop() {
   debug('stop');
-  const {keys, redisPool, timer} = this;
+  const {redisPool, timer} = this;
   if (timer) {
     clearTimeout(timer);
   }
-  return this.getRedisClient((redisClient) =>
-    redisClient.lrangeAsync(keys.busyListKey, 0, bigNumber)
-      // .tap(debug)
-      .map((busyResource) => this.release(busyResource))
-      .then(() => redisClient.multi()
-        .del(keys.resourcesListKey)
-        .del(keys.availableListKey)
-        .del(keys.busyListKey)
-        .del(keys.busySetKey)
-        .execAsync()))
-    .then(() => redisPool.drain())
+  return redisPool.drain()
     .then(() => {
       this.stopped = true;
     });
+}
+
+function destroy() {
+  debug('destroy');
+  const {keys} = this;
+  return this.getRedisClient((redisClient) =>
+    redisClient.multi()
+      .del(keys.resourcesListKey)
+      .del(keys.availableListKey)
+      .del(keys.busyListKey)
+      .del(keys.busySetKey)
+      .execAsync());
 }
 
 function getRedisClient(fn) {
@@ -201,5 +214,18 @@ function releaseAllExpired() {
           // .tap(debug)
           .map((resource) => this.release(resource));
       });
+    });
+}
+
+function sync(resoucesReference) {
+  return this.getInfo()
+    .then((info) => {
+      const {resources} = info;
+      const resourcesToRemove = _.difference(resources, resoucesReference);
+      const resourcesToAdd = _.difference(resoucesReference, resources);
+      return Promise.all([
+        this.remove(...resourcesToRemove),
+        this.add(...resourcesToAdd),
+      ]);
     });
 }
