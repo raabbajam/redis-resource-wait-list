@@ -188,14 +188,14 @@ test('List -- removed when busy', (assert) => {
         .then(() => assert.end(error));
     });
 });
-test('List -- released twice', (assert) => {
+test.only('List -- released multiple times', (assert) => {
   const list = List({
     name: 'resource-x',
     resources: ['x1'],
   });
   return list.start()
     .then(() => list.acquire())
-    .then((x1) => list.release(x1).then(() => list.release(x1)))
+    .then((x1) => list.release(x1).then(() => list.release(x1)).then(() => list.release(x1)))
     .then(() => list.getInfo())
     .then((info) => {
       assert.ok(info.available.length === 1, 'should not duplicate on available');
