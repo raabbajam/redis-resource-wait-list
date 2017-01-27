@@ -103,13 +103,22 @@ function acquire() {
 function release(resource) {
   debug(`release ${resource}`);
   const {keys} = this;
+  const sha = '7834e4d113867947e1e2e376f9623297bfab7991';
+  const restArgs = [
+    4,
+    keys.busyListKey, keys.busySetKey, keys.resourcesListKey, keys.availableListKey,
+    resource,
+  ];
   return this.getRedisClient((redisClient) =>
-    redisClient.multi()
-      .lrem(keys.availableListKey, bigNumber, resource)
-      .rpush(keys.availableListKey, resource)
-      .lrem(keys.busyListKey, 1, resource)
-      .zrem(keys.busySetKey, resource)
-      .execAsync());
+    redisClient.evalshaAsync(sha, ...restArgs)
+      .catch((error) => {
+        if (!/NOSCRIPT/i.test(error.message)) {
+          throw error;
+        }
+        // eslint-disable-next-line max-len
+        const source = 'redis.call("LREM", KEYS[1], 9999, ARGV[1]) redis.call("ZREM", KEYS[2], ARGV[1]) if redis.call("SISMEMBER", KEYS[3], ARGV[1]) == 1 then redis.call("LREM", KEYS[4], 9999, ARGV[1]) return redis.call("RPUSH", KEYS[4], ARGV[1]) else return nil end';
+        return redisClient.evalAsync(source, ...restArgs);
+      }));
 }
 
 function add(resource) {

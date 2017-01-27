@@ -26,6 +26,7 @@ const list = List({
   options: {
     maxTimeoutToRelease: 5 * 60 * 1000, // Defaults to five minutes, important. see Reliable queues.
     maxTimeoutToWait: 5 * 60 * 1000, // Defaults to five minutes, important. see Reliable queues.
+    intervalToCheckRelease: 30000, // Resource that exceed maxTimeoutToRelease will release every check, thus the interval option
     redisUrl: 'redis://127.0.0.1:6379',
     redisOptions: {},
     redisPrefix: 'wl',
