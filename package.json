@@ -11,7 +11,7 @@
     "lint": "eslint src test",
     "check": "npm run lint -s && dependency-check package.json --entry src",
     "watch": "watch 'npm run test' src test",
-    "test": "node test | tspec",
+    "test": "DEBUG=redis-resource-wait-list:* node test | tspec",
     "prepublish": "npm run check -s && npm run test -s",
     "coverage": "isparta cover test",
     "coveralls": "npm run coverage -s && coveralls < coverage/lcov.info",
@@ -53,6 +53,7 @@
   "dependencies": {
     "bluebird": "^3.4.7",
     "generic-promise-pool": "^1.2.2",
+    "moment": "^2.17.1",
     "redis": "^2.6.5"
   },
   "registry": "https://registry.npmjs.org/"

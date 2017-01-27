@@ -1,7 +1,9 @@
 const Promise = require('bluebird');
+const debug = require('debug')('redis-resource-wait-list:main');
+const moment = require('moment');
 const pool = require('generic-promise-pool');
 const redis = require('redis');
-const lastIndex = 9999;
+const bigNumber = 9999;
 Promise.promisifyAll(redis.RedisClient.prototype);
 Promise.promisifyAll(redis.Multi.prototype);
 function List(data = {}) {
@@ -13,6 +15,7 @@ function List(data = {}) {
   const defaults = {
     maxTimeoutToRelease: 300000,
     maxTimeoutToWait: 300000,
+    intervalToCheckRelease: 30000,
     redisUrl: 'redis://127.0.0.1:6379',
     redisOptions: {},
     redisPrefix: 'wl',
@@ -27,7 +30,7 @@ function List(data = {}) {
     min: 1,
   };
   const redisPool = pool.create(poolOptions);
-  const resourcesListKey = `${redisPrefix}:${name}:resource-list`;
+  const resourcesListKey = `${redisPrefix}:${name}:resource-set`;
   const availableListKey = `${redisPrefix}:${name}:available-list`;
   const busyListKey = `${redisPrefix}:${name}:busy-list`;
   const busySetKey = `${redisPrefix}:${name}:busy-set`;
@@ -37,8 +40,8 @@ function List(data = {}) {
     busyListKey,
     busySetKey,
   };
-  // redisClient.on('error', (error) => console.log(`Error from "${name}" wait-list. ${error}`));
   const properties = {
+    stopped: false,
     redisPool,
     settings,
     name,
@@ -54,6 +57,7 @@ function List(data = {}) {
     remove,
     getInfo,
     stop,
+    releaseAllExpired,
   };
   const list = Object.assign(Object.create(prototypes), properties);
   return list;
@@ -62,85 +66,131 @@ function List(data = {}) {
 module.exports = List;
 
 function start() {
-  const {keys, resources} = this;
+  const {keys, resources, settings} = this;
+  const {intervalToCheckRelease} = settings;
   return this.getRedisClient((redisClient) =>
     redisClient.existsAsync(keys.resourcesListKey)
       .then((exist) => {
         if (exist) {
           return null;
         }
+        const repeat = () => this.releaseAllExpired()
+          .then(() => {
+            this.timer = setTimeout(repeat, intervalToCheckRelease);
+          })
+          .catch(() => {});
+        this.timer = setTimeout(repeat, intervalToCheckRelease);
         return redisClient.multi()
-          .rpush(keys.resourcesListKey, ...resources)
+          .sadd(keys.resourcesListKey, ...resources)
           .rpush(keys.availableListKey, ...resources)
           .execAsync();
-      })
-  );
+      }));
 }
 
 function acquire() {
+  debug('acquire');
   const {keys, settings} = this;
-  const {maxTimeoutToWait} = settings;
+  const {maxTimeoutToWait, maxTimeoutToRelease} = settings;
   return this.getRedisClient((redisClient) =>
-    redisClient.brpoplpushAsync(keys.availableListKey, keys.busyListKey, maxTimeoutToWait));
+    redisClient.brpoplpushAsync(keys.availableListKey, keys.busyListKey, maxTimeoutToWait)
+      // .tap(debug)
+      .tap((resource) => {
+        const expired = moment().add(maxTimeoutToRelease, 'ms').unix();
+        redisClient.zaddAsync(keys.busySetKey, expired, resource);
+      }));
 }
 
 function release(resource) {
+  debug(`release ${resource}`);
   const {keys} = this;
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
+      .lrem(keys.availableListKey, bigNumber, resource)
       .rpush(keys.availableListKey, resource)
       .lrem(keys.busyListKey, 1, resource)
-      .execAsync()
-    );
+      .zrem(keys.busySetKey, resource)
+      .execAsync());
 }
 
 function add(resource) {
   const {keys} = this;
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
-      .rpush(keys.resourcesListKey, resource)
+      .sadd(keys.resourcesListKey, resource)
+      .lrem(keys.availableListKey, bigNumber, resource)
       .rpush(keys.availableListKey, resource)
-      .execAsync()
-    );
+      .execAsync());
 }
 
 function remove(resource) {
   const {keys} = this;
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
-      .lrem(keys.busyListKey, 1, resource)
-      .lrem(keys.availableListKey, 1, resource)
-      .lrem(keys.resourcesListKey, 1, resource)
-      .execAsync()
-    );
+      .lrem(keys.busyListKey, bigNumber, resource)
+      .lrem(keys.availableListKey, bigNumber, resource)
+      .srem(keys.resourcesListKey, resource)
+      .execAsync());
 }
 
 function getInfo() {
   const {keys, settings} = this;
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
-      .lrange(keys.resourcesListKey, 0, lastIndex)
-      .lrange(keys.availableListKey, 0, lastIndex)
-      .lrange(keys.busyListKey, 0, lastIndex)
-      .execAsync()
-    )
+      .smembers(keys.resourcesListKey)
+      .lrange(keys.availableListKey, 0, bigNumber)
+      .lrange(keys.busyListKey, 0, bigNumber)
+      .execAsync())
     .spread((resources, available, busy) => ({resources, available, busy, settings}));
 }
 
 function stop() {
-  const {keys, redisPool} = this;
+  debug('stop');
+  const {keys, redisPool, timer} = this;
+  if (timer) {
+    clearTimeout(timer);
+  }
   return this.getRedisClient((redisClient) =>
-    redisClient.multi()
-      .del(keys.resourcesListKey)
-      .del(keys.availableListKey)
-      .del(keys.busyListKey)
-      .execAsync()
-    )
-    .then(() => redisPool.drain());
+    redisClient.lrangeAsync(keys.busyListKey, 0, bigNumber)
+      // .tap(debug)
+      .map((busyResource) => this.release(busyResource))
+      .then(() => redisClient.multi()
+        .del(keys.resourcesListKey)
+        .del(keys.availableListKey)
+        .del(keys.busyListKey)
+        .del(keys.busySetKey)
+        .execAsync()))
+    .then(() => redisPool.drain())
+    .then(() => {
+      this.stopped = true;
+    });
 }
 
 function getRedisClient(fn) {
-  const {redisPool} = this;
+  const {redisPool, stopped} = this;
   return Promise.resolve()
+    .then(() => {
+      if (stopped) {
+        const error = new Error('The resource list is already stopped and inaccessible.');
+        throw error;
+      }
+    })
     .then(() => redisPool.acquire(fn));
+}
+
+function releaseAllExpired() {
+  debug('releaseAllExpired');
+  const {keys, stopped} = this;
+  return Promise.resolve()
+    .then(() => {
+      if (stopped) {
+        const error = new Error('The resource list is already stopped and inaccessible.');
+        throw error;
+      }
+      return this.getRedisClient((redisClient) => {
+        const now = moment().unix();
+        return redisClient.zrangebyscoreAsync(keys.busySetKey, 0, now)
+          // .tap(debug)
+          .map((resource) => this.release(resource));
+      });
+    });
 }

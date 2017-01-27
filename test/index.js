@@ -2,7 +2,6 @@
 const Promise = require('bluebird');
 const test = require('tape');
 const List = require('../src');
-const delay = 100;
 test('List -- start', (assert) => {
   const list = List({
     name: 'resource-x',
@@ -128,6 +127,7 @@ test('List -- started in 2 places', (assert) => {
     });
 });
 test('List -- acquire more than available', (assert) => {
+  const delay = 100;
   const list = List({
     name: 'resource-x',
     resources: ['x1'],
@@ -140,6 +140,29 @@ test('List -- acquire more than available', (assert) => {
     })
     .then((x1) => {
       assert.ok(x1 === 'x1', 'should wait until available');
+      return list.stop().then(() => assert.end());
+    })
+    .catch((error) => {
+      list.stop()
+        .then(() => assert.end(error));
+    });
+});
+test('List -- maxTimeoutToRelease', (assert) => {
+  const delay = 2000;
+  const list = List({
+    name: 'resource-x',
+    resources: ['x1'],
+    options: {
+      maxTimeoutToRelease: 1000,
+      intervalToCheckRelease: 1000,
+    },
+  });
+  return list.start()
+    .then(() => list.acquire())
+    .delay(delay)
+    .then(() => list.getInfo())
+    .then((info) => {
+      assert.ok(info.available.length === 1, 'should released due to timeout');
       return list.stop().then(() => assert.end());
     })
     .catch((error) => {

@@ -50,10 +50,11 @@ list.start() //Promise
       // clientWaiting: 0, // not implemented
       settings,
     };
-
+    */
     list.stop(); // Promise
+
   });
-*/```
+```
 
 ## License
 
