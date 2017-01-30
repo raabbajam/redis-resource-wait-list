@@ -69,13 +69,14 @@ function List(data = {}) {
 module.exports = List;
 
 function start() {
-  const {keys, resources, settings} = this;
+  debug('start');
+  const {keys, resources = [], settings} = this;
   const {intervalToCheckRelease} = settings;
   return this.getRedisClient((redisClient) =>
     redisClient.existsAsync(keys.resourcesListKey)
       .then((exist) => {
         if (exist) {
-          return null;
+          return this.sync(resources);
         }
         const repeat = () => this.releaseAllExpired()
           .then(() => {
@@ -83,21 +84,37 @@ function start() {
           })
           .catch(() => {});
         this.timer = setTimeout(repeat, intervalToCheckRelease);
+        if (!resources.length) {
+          return null;
+        }
         return redisClient.multi()
           .sadd(keys.resourcesListKey, ...resources)
           .rpush(keys.availableListKey, ...resources)
           .execAsync();
-      }));
+      }))
+      .return(this);
 }
 
 function acquire() {
   debug('acquire');
   const {keys, settings} = this;
   const {maxTimeoutToWait, maxTimeoutToRelease} = settings;
+  const thousand = 1000;
+  const timeout = Math.ceil(maxTimeoutToWait / thousand);
   return this.getRedisClient((redisClient) =>
-    redisClient.brpoplpushAsync(keys.availableListKey, keys.busyListKey, maxTimeoutToWait)
-      // .tap(debug)
+    redisClient.scardAsync(keys.resourcesListKey)
+      .then((hasResource) => {
+        if (!hasResource) {
+          const error = new Error('ENOTFOUND. This list has no member');
+          throw error;
+        }
+        return redisClient.brpoplpushAsync(keys.availableListKey, keys.busyListKey, timeout);
+      })
       .tap((resource) => {
+        if (!resource) {
+          const error = new Error('ETIMEOUT. Can\'t find resouce.');
+          throw error;
+        }
         const expired = moment().add(maxTimeoutToRelease, 'ms').unix();
         redisClient.zaddAsync(keys.busySetKey, expired, resource);
       }));
@@ -125,6 +142,7 @@ function release(resource) {
 }
 
 function add(...resources) {
+  debug(`add ${resources}`);
   const {keys} = this;
   return this.getRedisClient((redisClient) => {
     const multi = redisClient.multi();
@@ -139,6 +157,7 @@ function add(...resources) {
 }
 
 function remove(...resources) {
+  debug(`remove ${resources}`);
   const {keys} = this;
   return this.getRedisClient((redisClient) => {
     const multi = redisClient.multi();
@@ -153,14 +172,15 @@ function remove(...resources) {
 }
 
 function getInfo() {
-  const {keys, settings} = this;
+  debug('getInfo');
+  const {keys, settings, name} = this;
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
       .smembers(keys.resourcesListKey)
       .lrange(keys.availableListKey, 0, bigNumber)
       .lrange(keys.busyListKey, 0, bigNumber)
       .execAsync())
-    .spread((resources, available, busy) => ({resources, available, busy, settings}));
+    .spread((resources, available, busy) => ({name, resources, available, busy, settings}));
 }
 
 function stop() {
@@ -175,7 +195,7 @@ function stop() {
     });
 }
 
-function destroy() {
+function destroy(options = {}) {
   debug('destroy');
   const {keys} = this;
   return this.getRedisClient((redisClient) =>
@@ -184,7 +204,14 @@ function destroy() {
       .del(keys.availableListKey)
       .del(keys.busyListKey)
       .del(keys.busySetKey)
-      .execAsync());
+      .execAsync())
+    .tap(() => {
+      const {with_stop} = options;
+      if (with_stop) {
+        return this.stop();
+      }
+      return null;
+    });
 }
 
 function getRedisClient(fn) {
@@ -218,6 +245,7 @@ function releaseAllExpired() {
 }
 
 function sync(resoucesReference) {
+  debug('sync');
   return this.getInfo()
     .then((info) => {
       const {resources} = info;
