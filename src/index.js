@@ -21,7 +21,7 @@ function List(data = {}) {
     redisOptions: {},
     redisPrefix: 'wl',
   };
-  const settings = Object.assign({}, defaults, options);
+  const settings = Object.assign({}, defaults, options, {name});
   const {redisUrl, redisOptions, redisPrefix} = settings;
   const poolOptions = {
     name: `${name}-pool`,
@@ -69,8 +69,12 @@ function List(data = {}) {
 module.exports = List;
 
 function start() {
-  debug('start');
   const {keys, resources = [], settings} = this;
+  const {
+    redisPrefix,
+    name,
+  } = settings;
+  debug(`starting ${redisPrefix}:${name}`);
   const {intervalToCheckRelease} = settings;
   return this.getRedisClient((redisClient) =>
     redisClient.existsAsync(keys.resourcesListKey)
@@ -180,7 +184,13 @@ function getInfo() {
       .lrange(keys.availableListKey, 0, bigNumber)
       .lrange(keys.busyListKey, 0, bigNumber)
       .execAsync())
-    .spread((resources, available, busy) => ({name, resources, available, busy, settings}));
+    .spread((resources, available, busy) => ({
+      name,
+      resources: resources.map(_.toInteger),
+      available,
+      busy,
+      settings,
+    }));
 }
 
 function stop() {
@@ -249,11 +259,19 @@ function sync(resoucesReference) {
   return this.getInfo()
     .then((info) => {
       const {resources} = info;
-      const resourcesToRemove = _.difference(resources, resoucesReference);
-      const resourcesToAdd = _.difference(resoucesReference, resources);
-      return Promise.all([
-        this.remove(...resourcesToRemove),
-        this.add(...resourcesToAdd),
-      ]);
+      debug({resources, resoucesReference});
+      const resourcesToRemove = _.differenceBy(resources, resoucesReference);
+      const resourcesToAdd = _.differenceBy(resoucesReference, resources);
+      const promises = [];
+      if (resourcesToRemove.length) {
+        promises.push(this.remove(...resourcesToRemove));
+      }
+      if (resourcesToAdd.length) {
+        promises.push(this.add(...resourcesToAdd));
+      }
+      if (promises.length) {
+        return Promise.all(promises);
+      }
+      return null;
     });
 }
