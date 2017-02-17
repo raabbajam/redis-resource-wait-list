@@ -186,7 +186,7 @@ function getInfo() {
       .execAsync())
     .spread((resources, available, busy) => ({
       name,
-      resources: resources.map(_.toInteger),
+      resources,
       available,
       busy,
       settings,
@@ -259,9 +259,9 @@ function sync(resoucesReference) {
   return this.getInfo()
     .then((info) => {
       const {resources} = info;
-      debug({resources, resoucesReference});
-      const resourcesToRemove = _.differenceBy(resources, resoucesReference);
-      const resourcesToAdd = _.differenceBy(resoucesReference, resources);
+      // debug({resources, resoucesReference});
+      const resourcesToRemove = _.differenceBy(resources, resoucesReference, looseEq);
+      const resourcesToAdd = _.differenceBy(resoucesReference, resources, looseEq);
       const promises = [];
       if (resourcesToRemove.length) {
         promises.push(this.remove(...resourcesToRemove));
@@ -274,4 +274,8 @@ function sync(resoucesReference) {
       }
       return null;
     });
+}
+
+function looseEq(a, b) {
+  return _.toString(a) === _.toString(b);
 }
