@@ -197,6 +197,7 @@ function stop() {
   debug('stop');
   const {redisPool, timer} = this;
   if (timer) {
+    debug('clearTimeout timer');
     clearTimeout(timer);
   }
   return redisPool.drain()
