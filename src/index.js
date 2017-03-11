@@ -79,15 +79,15 @@ function start() {
   return this.getRedisClient((redisClient) =>
     redisClient.existsAsync(keys.resourcesListKey)
       .then((exist) => {
-        if (exist) {
-          return this.sync(resources);
-        }
         const repeat = () => this.releaseAllExpired()
           .then(() => {
             this.timer = setTimeout(repeat, intervalToCheckRelease);
           })
-          .catch(() => {});
+          .catch(debug);
         this.timer = setTimeout(repeat, intervalToCheckRelease);
+        if (exist) {
+          return this.sync(resources);
+        }
         if (!resources.length) {
           return null;
         }
