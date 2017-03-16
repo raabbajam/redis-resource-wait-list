@@ -266,10 +266,9 @@ function sync(resourcesReference) {
   return this.getInfo()
     .then((info) => {
       const {resources} = info;
-      // debug({resources, resourcesReference});
-      const resourcesToRemove = _.differenceBy(resources, resourcesReference, looseEq);
-      const resourcesToAdd = _.differenceBy(resourcesReference, resources, looseEq);
-      debug({name, resourcesToRemove, resourcesToAdd});
+      const resourcesToRemove = _.differenceBy(resources, resourcesReference, _.toString);
+      const resourcesToAdd = _.differenceBy(resourcesReference, resources, _.toString);
+      debug({name, resources, resourcesReference, resourcesToRemove, resourcesToAdd});
       const promises = [];
       if (resourcesToRemove.length) {
         promises.push(this.remove(...resourcesToRemove));
@@ -282,8 +281,4 @@ function sync(resourcesReference) {
       }
       return null;
     });
-}
-
-function looseEq(a, b) {
-  return _.toString(a) === _.toString(b);
 }
