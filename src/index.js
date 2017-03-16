@@ -100,8 +100,9 @@ function start() {
 }
 
 function acquire() {
-  debug('acquire');
   const {keys, settings} = this;
+  const {name} = settings;
+  debug(`${name} acquire`);
   const {maxTimeoutToWait, maxTimeoutToRelease} = settings;
   const thousand = 1000;
   const timeout = Math.ceil(maxTimeoutToWait / thousand);
@@ -115,6 +116,7 @@ function acquire() {
         return redisClient.brpoplpushAsync(keys.availableListKey, keys.busyListKey, timeout);
       })
       .tap((resource) => {
+        debug(`${name} ${resource}`);
         if (!resource) {
           const error = new Error('ETIMEOUT. Can\'t find resouce.');
           throw error;
@@ -125,8 +127,8 @@ function acquire() {
 }
 
 function release(resource) {
-  debug(`release ${resource}`);
-  const {keys} = this;
+  const {keys, settings: {name}} = this;
+  debug(`${name} release ${resource}`);
   const sha = '7834e4d113867947e1e2e376f9623297bfab7991';
   const restArgs = [
     4,
@@ -146,8 +148,9 @@ function release(resource) {
 }
 
 function add(...resources) {
-  debug(`add ${resources}`);
-  const {keys} = this;
+  const {keys, settings} = this;
+  const {name} = settings;
+  debug(`${name} add ${resources}`);
   return this.getRedisClient((redisClient) => {
     const multi = redisClient.multi();
     resources.forEach((resource) => {
@@ -161,8 +164,9 @@ function add(...resources) {
 }
 
 function remove(...resources) {
-  debug(`remove ${resources}`);
-  const {keys} = this;
+  const {keys, settings} = this;
+  const {name} = settings;
+  debug(`${name} remove ${resources}`);
   return this.getRedisClient((redisClient) => {
     const multi = redisClient.multi();
     resources.forEach((resource) => {
@@ -176,8 +180,8 @@ function remove(...resources) {
 }
 
 function getInfo() {
-  debug('getInfo');
   const {keys, settings, name} = this;
+  debug(`${name} getInfo`);
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
       .smembers(keys.resourcesListKey)
@@ -190,12 +194,13 @@ function getInfo() {
       available,
       busy,
       settings,
-    }));
+    }))
+    .tap(debug);
 }
 
 function stop() {
-  debug('stop');
-  const {redisPool, timer} = this;
+  const {redisPool, timer, name} = this;
+  debug(`${name} stop`);
   if (timer) {
     debug('clearTimeout timer');
     clearTimeout(timer);
@@ -207,8 +212,8 @@ function stop() {
 }
 
 function destroy(options = {}) {
-  debug('destroy');
-  const {keys} = this;
+  const {keys, name} = this;
+  debug(`${name} destroy`);
   return this.getRedisClient((redisClient) =>
     redisClient.multi()
       .del(keys.resourcesListKey)
@@ -238,8 +243,8 @@ function getRedisClient(fn) {
 }
 
 function releaseAllExpired() {
-  debug('releaseAllExpired');
-  const {keys, stopped} = this;
+  const {keys, stopped, name} = this;
+  debug(`${name} releaseAllExpired`);
   return Promise.resolve()
     .then(() => {
       if (stopped) {
@@ -255,14 +260,16 @@ function releaseAllExpired() {
     });
 }
 
-function sync(resoucesReference) {
-  debug('sync');
+function sync(resourcesReference) {
+  const {name} = this;
+  debug(`${name} sync ${resourcesReference}`);
   return this.getInfo()
     .then((info) => {
       const {resources} = info;
-      // debug({resources, resoucesReference});
-      const resourcesToRemove = _.differenceBy(resources, resoucesReference, looseEq);
-      const resourcesToAdd = _.differenceBy(resoucesReference, resources, looseEq);
+      // debug({resources, resourcesReference});
+      const resourcesToRemove = _.differenceBy(resources, resourcesReference, looseEq);
+      const resourcesToAdd = _.differenceBy(resourcesReference, resources, looseEq);
+      debug({name, resourcesToRemove, resourcesToAdd});
       const promises = [];
       if (resourcesToRemove.length) {
         promises.push(this.remove(...resourcesToRemove));
